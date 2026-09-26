@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
 import { Footer } from './components/Footer';
 import { HomePage } from './views/HomePage';
 import { LoginPage } from './views/LoginPage';
@@ -33,6 +34,9 @@ export default function App() {
   const [members, setMembers] = useState<RoverMember[]>([]);
   const [crews, setCrews] = useState<RoverCrew[]>([]);
   const [currentUser, setCurrentUser] = useState<RoverMember | null>(null);
+
+  // Sidebar toggle state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Modals state
   const [profileModalMember, setProfileModalMember] = useState<RoverMember | null>(null);
@@ -168,13 +172,28 @@ export default function App() {
         </div>
       )}
 
-      {/* Top Bar Navigation */}
+      {/* Top Bar Navigation with Sidebar Toggle */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         currentUser={currentUser}
         onLogout={handleLogout}
         onOpenIdCard={currentUser ? () => setIdCardMember(currentUser) : undefined}
+        onToggleSidebar={() => setIsSidebarOpen(true)}
+      />
+
+      {/* Responsive Collapsible Sidebar */}
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        activeTab={activeTab}
+        setActiveTab={handleTabChange}
+        currentUser={currentUser}
+        crews={crews}
+        onLogout={handleLogout}
+        onOpenIdCard={currentUser ? () => setIdCardMember(currentUser) : undefined}
+        onOpenLogHours={() => setIsLogHoursOpen(true)}
+        onOpenEditProfile={() => setIsEditProfileOpen(true)}
       />
 
       {/* Main Content Router */}

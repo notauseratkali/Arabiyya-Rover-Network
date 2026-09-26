@@ -1,5 +1,5 @@
 import React from 'react';
-import { Compass, LogOut, LayoutDashboard, Shield } from 'lucide-react';
+import { Compass, LogOut, LayoutDashboard, Shield, Menu } from 'lucide-react';
 import { RoverMember, ActiveTab } from '../types';
 
 interface NavbarProps {
@@ -8,6 +8,7 @@ interface NavbarProps {
   currentUser: RoverMember | null;
   onLogout: () => void;
   onOpenIdCard?: () => void;
+  onToggleSidebar?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -16,37 +17,41 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   onLogout,
   onOpenIdCard,
+  onToggleSidebar,
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
-        {/* Zone 1: Single element brand wordmark with subtle insignia */}
-        <button
-          onClick={() => setActiveTab('home')}
-          className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-maroon-700 rounded-md"
-        >
-          <div className="w-9 h-9 rounded-lg bg-maroon-900 flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-105">
-            <Compass className="w-5 h-5 text-skyrover-400" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">
-            Rover<span className="text-maroon-800">Net</span>
-          </span>
-        </button>
+        {/* Zone 1: Sidebar Toggle + Brand wordmark with subtle insignia */}
+        <div className="flex items-center gap-2">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="p-2 -ml-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-maroon-700"
+              title="Open Navigation Menu"
+              aria-label="Toggle Sidebar Navigation"
+            >
+              <Menu className="w-5 h-5 text-slate-700" />
+            </button>
+          )}
 
-        {/* Zone 2: Navigation link */}
-        <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
           <button
             onClick={() => setActiveTab('home')}
-            className={`transition-colors hover:text-maroon-900 pb-1 ${
-              activeTab === 'home'
-                ? 'text-maroon-900 border-b-2 border-maroon-800 font-semibold'
-                : ''
-            }`}
+            className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-maroon-700 rounded-md"
           >
-            Home
+            <div className="w-9 h-9 rounded-lg bg-maroon-900 flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-105">
+              <Compass className="w-5 h-5 text-skyrover-400" />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-slate-900">
+              Rover<span className="text-maroon-800">Net</span>
+            </span>
           </button>
-          {currentUser && (
+        </div>
+
+        {/* Zone 2: Navigation link */}
+        {currentUser && (
+          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
             <button
               onClick={() => setActiveTab('dashboard')}
               className={`transition-colors hover:text-maroon-900 pb-1 ${
@@ -57,8 +62,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               Member Dashboard
             </button>
-          )}
-        </nav>
+          </nav>
+        )}
 
         {/* Zone 3: 1-2 primary actions */}
         <div className="flex items-center gap-3">
@@ -130,12 +135,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile secondary tab strip */}
       <div className="md:hidden flex items-center justify-around border-t border-slate-100 bg-slate-50 px-2 py-2 text-xs">
-        <button
-          onClick={() => setActiveTab('home')}
-          className={`px-3 py-1 rounded ${activeTab === 'home' ? 'font-bold text-maroon-900' : 'text-slate-600'}`}
-        >
-          Home
-        </button>
         {currentUser ? (
           <button
             onClick={() => setActiveTab('dashboard')}
