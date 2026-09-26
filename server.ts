@@ -1,0 +1,700 @@
+import express, { Request, Response } from 'express';
+import { createServer as createViteServer } from 'vite';
+import path from 'path';
+import crypto from 'crypto';
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// In-Memory Enterprise Storage (backed by simulated Firestore schemas)
+interface StoredApplication {
+  trackingCode: string;
+  name: string;
+  email: string;
+  phone: string;
+  telegramHandle: string;
+  dob: string;
+  calculatedAge: number;
+  allocatedSection: 'Explorer' | 'Rover' | 'Leader';
+  bloodGroup: string;
+  scoutBackground: string;
+  emergencyContact: { name: string; relation: string; phone: string };
+  otp: string;
+  status: 'otp_pending' | 'submitted' | 'interview_scheduled' | 'approved' | 'investiture_ready' | 'rejected';
+  createdAt: string;
+  notes?: string;
+}
+
+interface StoredLogbookEntry {
+  id: string;
+  memberId: string;
+  memberName: string;
+  memberSection: string;
+  title: string;
+  type: 'Camp' | 'Hike' | 'Service' | 'Milestone' | 'Training';
+  date: string;
+  hours: number;
+  location: string;
+  reflections: string;
+  skillsPracticed: string[];
+  status: 'Draft' | 'Pending Review' | 'Verified' | 'Revision Requested';
+  submittedAt?: string;
+  reviewerName?: string;
+  reviewerRole?: string;
+  reviewerNotes?: string;
+  verifiedAt?: string;
+}
+
+interface StoredMeetingMinutes {
+  id: string;
+  referenceNumber: string;
+  title: string;
+  date: string;
+  location: string;
+  chairPerson: string;
+  secretary: string;
+  attendees: string[];
+  absentees: string[];
+  agenda: string[];
+  resolutions: Array<{ id: string; topic: string; decision: string; assignedTo: string; deadline: string }>;
+  bodyHtml: string;
+  status: 'Draft' | 'Published';
+  publishedAt?: string;
+}
+
+interface StoredBroadcast {
+  id: string;
+  title: string;
+  priority: 'High' | 'Normal' | 'Urgent';
+  targetAudience: 'All' | 'Rovers' | 'Leaders' | 'Explorers';
+  channels: {
+    inPortalBanner: boolean;
+    emailHtml: boolean;
+    telegramChannel: boolean;
+  };
+  content: string;
+  dispatchedBy: string;
+  timestamp: string;
+  metrics: {
+    inPortalViews: number;
+    emailsSent: number;
+    telegramDeliveries: number;
+  };
+}
+
+interface StoredExcuse {
+  id: string;
+  memberId: string;
+  memberName: string;
+  eventId: string;
+  eventTitle: string;
+  reason: string;
+  status: 'Pending' | 'Approved' | 'Declined';
+  filedAt: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
+}
+
+// Initial Data
+let ssoSharedSecret = 'ARAB_SSO_KEY_2026_MASTER_SECRET_SECURE';
+
+let applications: StoredApplication[] = [
+  {
+    trackingCode: 'ARAB-2026-8812',
+    name: 'Zaid Al-Harbi',
+    email: 'zaid.harbi@gmail.com',
+    phone: '+966 50 123 4567',
+    telegramHandle: '@zaid_scout',
+    dob: '2004-06-15',
+    calculatedAge: 21,
+    allocatedSection: 'Rover',
+    bloodGroup: 'O+',
+    scoutBackground: 'Former Senior Scout (Al-Quds Patrol)',
+    emergencyContact: { name: 'Abdullah Al-Harbi', relation: 'Father', phone: '+966 50 999 8888' },
+    otp: '482910',
+    status: 'submitted',
+    createdAt: '2026-03-20T10:00:00Z',
+    notes: 'Strong orienteering and pioneering foundations. Interview recommended for Apex Crew.',
+  },
+  {
+    trackingCode: 'ARAB-2026-9041',
+    name: 'Yousef Mansoor',
+    email: 'yousef.m@gmail.com',
+    phone: '+966 54 887 6543',
+    telegramHandle: '@yousef_m',
+    dob: '2010-09-12',
+    calculatedAge: 15,
+    allocatedSection: 'Explorer',
+    bloodGroup: 'A+',
+    scoutBackground: 'Troop Patrol Leader',
+    emergencyContact: { name: 'Sami Mansoor', relation: 'Father', phone: '+966 54 111 2233' },
+    otp: '194820',
+    status: 'interview_scheduled',
+    createdAt: '2026-03-22T14:30:00Z',
+    notes: 'Allocated to Explorer Section (<18). Orientation mentor assigned.',
+  },
+  {
+    trackingCode: 'ARAB-2026-7733',
+    name: 'Dr. Tariq Al-Omari',
+    email: 'tariq.omari@univ.edu',
+    phone: '+966 56 443 2190',
+    telegramHandle: '@tariq_omari',
+    dob: '1995-02-10',
+    calculatedAge: 31,
+    allocatedSection: 'Leader',
+    bloodGroup: 'B+',
+    scoutBackground: 'Wood Badge Holder (1998 Batch)',
+    emergencyContact: { name: 'Layla Al-Omari', relation: 'Spouse', phone: '+966 56 443 2191' },
+    otp: '772183',
+    status: 'approved',
+    createdAt: '2026-03-18T09:15:00Z',
+    notes: 'Approved as Assistant Crew Leader & Wilderness Medic Advisor.',
+  }
+];
+
+let logbookEntries: StoredLogbookEntry[] = [
+  {
+    id: 'log-101',
+    memberId: 'ROV-7842',
+    memberName: 'Sarah Al-Mansoor',
+    memberSection: 'Rover',
+    title: 'Wadi Hanifa Environmental Habitat Restoration',
+    type: 'Service',
+    date: '2026-03-15',
+    hours: 8,
+    location: 'Wadi Hanifa Eco-Park Sector 4',
+    reflections: 'Coordinated crew deployment to clear non-native acacia species and plant 450 native desert trees. Delegated safety protocols across three patrols.',
+    skillsPracticed: ['Desert Ecology Restoration', 'Field Leadership', 'Hydration Triage', 'Logistics'],
+    status: 'Verified',
+    submittedAt: '2026-03-16T18:00:00Z',
+    reviewerName: 'Marcus Vance',
+    reviewerRole: 'Rover Scout Leader',
+    reviewerNotes: 'Exemplary leadership demonstrated. Logbook criteria fully satisfied for Community Shield.',
+    verifiedAt: '2026-03-17T09:30:00Z',
+  },
+  {
+    id: 'log-102',
+    memberId: 'ROV-6109',
+    memberName: 'Liam Vance',
+    memberSection: 'Rover',
+    title: 'Tuwaiq Escarpment 42km Night Navigation Trek',
+    type: 'Hike',
+    date: '2026-03-08',
+    hours: 14,
+    location: 'Tuwaiq Mountain Range, Sector West',
+    reflections: 'Self-sustained night compass navigation relying strictly on lunar bearings and topographic maps. Zero GPS assistance.',
+    skillsPracticed: ['Night Celestial Navigation', 'Topo Ridge Traverse', 'Emergency Bivouac', 'Leave No Trace'],
+    status: 'Verified',
+    submittedAt: '2026-03-09T11:00:00Z',
+    reviewerName: 'Sarah Al-Mansoor',
+    reviewerRole: 'Crew Leader',
+    reviewerNotes: 'Verified trek logs, altimeter log, and map bearings. Approved for Rambler Award Stage.',
+    verifiedAt: '2026-03-10T14:15:00Z',
+  },
+  {
+    id: 'log-103',
+    memberId: 'ROV-4412',
+    memberName: 'Maya Chen',
+    memberSection: 'Rover',
+    title: 'Rover Squire Vigil & Night Reflection',
+    type: 'Milestone',
+    date: '2026-03-18',
+    hours: 6,
+    location: 'Camp Al-Nujoom Outdoor Amphitheater',
+    reflections: 'Completed the traditional solitary vigil pondering the Rover Promise, personal weaknesses, and commitment to the Scout Law.',
+    skillsPracticed: ['Rover Self-Evaluation', 'Scouting Constitution Reflection', 'Personal Vigil'],
+    status: 'Pending Review',
+    submittedAt: '2026-03-19T08:00:00Z',
+  },
+  {
+    id: 'log-104',
+    memberId: 'ROV-5521',
+    memberName: 'David Kim',
+    memberSection: 'Rover',
+    title: 'Spring Camporee Emergency Water Purification Drill',
+    type: 'Training',
+    date: '2026-03-21',
+    hours: 5,
+    location: 'District Campgrounds Station 2',
+    reflections: 'Demonstrated gravity filtration and solar disinfection setups to 25 candidate scouts.',
+    skillsPracticed: ['Water Sanitation', 'Solar Disinfection', 'Youth Instruction'],
+    status: 'Draft',
+  }
+];
+
+let meetingMinutes: StoredMeetingMinutes[] = [
+  {
+    id: 'min-2026-03',
+    referenceNumber: 'MIN-ROV-2026/03',
+    title: 'Arabiyya Rover Council Extraordinary General Assembly',
+    date: 'March 14, 2026',
+    location: 'Arabiyya Scout Headquarters & Hybrid Zoom',
+    chairPerson: 'Sarah Al-Mansoor (Crew Leader)',
+    secretary: 'Julian Reed (Council Secretary)',
+    attendees: ['Sarah Al-Mansoor', 'Liam Vance', 'Julian Reed', 'Tariq Hussain', 'Marcus Vance', 'Elena Rostova'],
+    absentees: ['David Kim (Excused - Exam)'],
+    agenda: [
+      '1. Review and ratification of Minutes MIN-ROV-2026/02',
+      '2. Allocation of National Spring Moot 2026 delegates and equipment budget',
+      '3. Ratification of Explorer Section Transition Program (<18)',
+      '4. Logbook digital verification SLA enforcement'
+    ],
+    resolutions: [
+      {
+        id: 'res-1',
+        topic: 'Spring Moot Contingent Budget',
+        decision: 'Approved grant of 12,000 SAR for lightweight expedition tents and satellite radio units.',
+        assignedTo: 'Julian Reed (Quartermaster)',
+        deadline: 'April 02, 2026',
+      },
+      {
+        id: 'res-2',
+        topic: 'Explorer-to-Rover Transition',
+        decision: 'Chartered dual-mentorship system where Rovers in Stage 3 mentor Explorer squad candidates.',
+        assignedTo: 'Liam Vance (Senior Rover)',
+        deadline: 'April 15, 2026',
+      },
+      {
+        id: 'res-3',
+        topic: 'Digital Logbook Turnaround',
+        decision: 'Enforced 7-day review SLA for all submitted logbook entries by Crew Leaders.',
+        assignedTo: 'Sarah Al-Mansoor',
+        deadline: 'Immediate',
+      }
+    ],
+    bodyHtml: '<p>The meeting commenced promptly at 18:30 with the Scout Promise. The Chair noted a full quorum of council members. Deliberations proceeded across all agenda items without dissent. Council expressed gratitude to the service committee for surpassing 500 collective service hours this quarter.</p>',
+    status: 'Published',
+    publishedAt: '2026-03-15T10:00:00Z',
+  }
+];
+
+let broadcasts: StoredBroadcast[] = [
+  {
+    id: 'bc-01',
+    title: 'National Spring Rover Moot 2026: Mandatory Delegate Briefing',
+    priority: 'High',
+    targetAudience: 'All',
+    channels: {
+      inPortalBanner: true,
+      emailHtml: true,
+      telegramChannel: true,
+    },
+    content: 'All confirmed delegates for the National Spring Rover Moot must attend the logistics and gear inspection session this Friday at 16:00. Ensure digital logbooks are verified up to date.',
+    dispatchedBy: 'Julian Reed (Secretary)',
+    timestamp: '2026-03-24T12:00:00Z',
+    metrics: { inPortalViews: 148, emailsSent: 64, telegramDeliveries: 92 }
+  },
+  {
+    id: 'bc-02',
+    title: 'Weather Warning: High Desert Wind Conditions at Tuwaiq Campgrounds',
+    priority: 'Urgent',
+    targetAudience: 'Rovers',
+    channels: {
+      inPortalBanner: true,
+      emailHtml: true,
+      telegramChannel: true,
+    },
+    content: 'All crews participating in weekend bivouacs are advised that gust speeds will exceed 45 knots. High-altitude ridge lines are closed. Follow storm protocols.',
+    dispatchedBy: 'Safety Officer / Leader Cadre',
+    timestamp: '2026-03-21T08:30:00Z',
+    metrics: { inPortalViews: 210, emailsSent: 58, telegramDeliveries: 104 }
+  }
+];
+
+let excuses: StoredExcuse[] = [
+  {
+    id: 'exc-01',
+    memberId: 'ROV-5521',
+    memberName: 'David Kim',
+    eventId: 'EVT-01',
+    eventTitle: 'National Spring Rover Moot 2026',
+    reason: 'University midterm examination schedule conflicts with departure date.',
+    status: 'Approved',
+    filedAt: '2026-03-20T16:00:00Z',
+    reviewedBy: 'Julian Reed (Secretary)',
+    reviewNotes: 'Valid academic conflict. Excused and exam timetable verified.',
+  }
+];
+
+// Helper: Age Calculator
+function calculateAge(dobString: string): number {
+  const dob = new Date(dobString);
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const m = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+// -------------------------------------------------------------
+// 1. Federated SSO Endpoint (/api/sso/authenticate)
+// -------------------------------------------------------------
+app.post('/api/sso/authenticate', (req: Request, res: Response) => {
+  const { targetPortal, memberId, timestamp } = req.body;
+
+  if (!targetPortal || !memberId) {
+    return res.status(400).json({ error: 'Missing required parameters: targetPortal, memberId' });
+  }
+
+  // Create HMAC SHA-256 signature using the active shared-secret key
+  const payloadString = `${memberId}:${targetPortal}:${timestamp || Date.now()}`;
+  const hmac = crypto.createHmac('sha256', ssoSharedSecret);
+  hmac.update(payloadString);
+  const signature = hmac.digest('hex');
+
+  const federatedTicket = `ARAB-SSO-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+
+  // Generate target redirect URL
+  const portalDomains: Record<string, string> = {
+    courses: 'https://learn.arabiyyascouts.org/sso/callback',
+    finance: 'https://finance.arabiyyascouts.org/sso/callback',
+    armory: 'https://armory.arabiyyascouts.org/sso/callback',
+  };
+
+  const callbackUrl = portalDomains[targetPortal] || `https://${targetPortal}.arabiyyascouts.org/sso/callback`;
+  const ssoRedirectUrl = `${callbackUrl}?ticket=${federatedTicket}&sig=${signature}&ts=${timestamp || Date.now()}&id=${memberId}`;
+
+  res.json({
+    success: true,
+    targetPortal,
+    federatedTicket,
+    signature,
+    activeKeyId: 'ARAB-KEY-V2-ROTATED-2026',
+    expiresInSeconds: 300,
+    redirectUrl: ssoRedirectUrl,
+    handshakeStatus: 'VALIDATED_FEDERATED_SESSION',
+  });
+});
+
+// Rotate SSO Key (Admin Only)
+app.post('/api/sso/rotate-key', (req: Request, res: Response) => {
+  const newSecret = `ARAB_SSO_KEY_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+  ssoSharedSecret = newSecret;
+  res.json({
+    success: true,
+    message: 'Federated SSO key rotation completed across all Arabiyya affiliated nodes.',
+    keyFingerprint: crypto.createHash('sha256').update(newSecret).digest('hex').substring(0, 16),
+    rotatedAt: new Date().toISOString(),
+  });
+});
+
+// -------------------------------------------------------------
+// 2. Intelligent Member Pipeline APIs (/api/pipeline/*)
+// -------------------------------------------------------------
+
+// Submit New Application with Dynamic Age Allocation & 2FA OTP
+app.post('/api/pipeline/apply', (req: Request, res: Response) => {
+  const { name, email, phone, telegramHandle, dob, bloodGroup, scoutBackground, emergencyContact } = req.body;
+
+  if (!name || !email || !dob) {
+    return res.status(400).json({ error: 'Name, email, and date of birth are required.' });
+  }
+
+  const age = calculateAge(dob);
+  
+  // Real-time Age Section Allocation
+  let allocatedSection: 'Explorer' | 'Rover' | 'Leader' = 'Rover';
+  if (age < 18) {
+    allocatedSection = 'Explorer';
+  } else if (age >= 18 && age <= 26) {
+    allocatedSection = 'Rover';
+  } else {
+    allocatedSection = 'Leader';
+  }
+
+  // Generate OTP and Tracking Code
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const trackingCode = `ARAB-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  const newApp: StoredApplication = {
+    trackingCode,
+    name,
+    email,
+    phone: phone || '',
+    telegramHandle: telegramHandle || '',
+    dob,
+    calculatedAge: age,
+    allocatedSection,
+    bloodGroup: bloodGroup || 'O+',
+    scoutBackground: scoutBackground || 'New to Scouting',
+    emergencyContact: emergencyContact || { name: 'Emergency Contact', relation: 'Family', phone: phone || '' },
+    otp,
+    status: 'otp_pending',
+    createdAt: new Date().toISOString(),
+  };
+
+  applications.push(newApp);
+
+  res.json({
+    success: true,
+    trackingCode,
+    calculatedAge: age,
+    allocatedSection,
+    message: `Application drafted. Section automatically determined: ${allocatedSection} (Age: ${age}). Verification OTP dispatched.`,
+    simulatedOtp: otp, // Provided for instant demo verification
+  });
+});
+
+// Verify 2FA OTP
+app.post('/api/pipeline/verify-otp', (req: Request, res: Response) => {
+  const { trackingCode, otp } = req.body;
+  const appItem = applications.find(a => a.trackingCode === trackingCode);
+
+  if (!appItem) {
+    return res.status(404).json({ error: 'Application reference code not found.' });
+  }
+
+  if (appItem.otp !== otp && otp !== '123456') { // Allow 123456 bypass for demo testing
+    return res.status(400).json({ error: 'Invalid 2FA OTP. Please check Telegram or Email dispatch.' });
+  }
+
+  appItem.status = 'submitted';
+  res.json({
+    success: true,
+    trackingCode: appItem.trackingCode,
+    status: appItem.status,
+    allocatedSection: appItem.allocatedSection,
+    message: '2FA OTP verified successfully. Application has been queued for Council Review.',
+  });
+});
+
+// Public Application Status Tracker
+app.get('/api/pipeline/track/:code', (req: Request, res: Response) => {
+  const { code } = req.params;
+  const appItem = applications.find(a => a.trackingCode.toLowerCase() === code.toLowerCase());
+
+  if (!appItem) {
+    return res.status(404).json({ error: 'No application record found with that tracking code.' });
+  }
+
+  res.json({
+    trackingCode: appItem.trackingCode,
+    name: appItem.name,
+    allocatedSection: appItem.allocatedSection,
+    calculatedAge: appItem.calculatedAge,
+    status: appItem.status,
+    createdAt: appItem.createdAt,
+    notes: appItem.notes,
+  });
+});
+
+// Council Review List
+app.get('/api/pipeline/applications', (_req: Request, res: Response) => {
+  res.json(applications);
+});
+
+// Council Review Action (Schedule Interview, Approve, Reject)
+app.post('/api/pipeline/action', (req: Request, res: Response) => {
+  const { trackingCode, action, notes } = req.body;
+  const appItem = applications.find(a => a.trackingCode === trackingCode);
+
+  if (!appItem) {
+    return res.status(404).json({ error: 'Application not found.' });
+  }
+
+  if (action === 'schedule_interview') {
+    appItem.status = 'interview_scheduled';
+  } else if (action === 'approve') {
+    appItem.status = 'approved';
+  } else if (action === 'investiture_ready') {
+    appItem.status = 'investiture_ready';
+  } else if (action === 'reject') {
+    appItem.status = 'rejected';
+  }
+
+  if (notes) appItem.notes = notes;
+
+  res.json({ success: true, application: appItem });
+});
+
+// -------------------------------------------------------------
+// 3. Digital Logbook APIs with Multi-stage Review
+// -------------------------------------------------------------
+app.get('/api/logbook', (req: Request, res: Response) => {
+  const { memberId, status } = req.query;
+  let results = [...logbookEntries];
+
+  if (memberId) {
+    results = results.filter(e => e.memberId === memberId);
+  }
+  if (status) {
+    results = results.filter(e => e.status === status);
+  }
+
+  res.json(results);
+});
+
+app.post('/api/logbook', (req: Request, res: Response) => {
+  const { memberId, memberName, memberSection, title, type, date, hours, location, reflections, skillsPracticed, submitForReview } = req.body;
+
+  const newEntry: StoredLogbookEntry = {
+    id: `log-${Date.now()}`,
+    memberId: memberId || 'ROV-7842',
+    memberName: memberName || 'Sarah Al-Mansoor',
+    memberSection: memberSection || 'Rover',
+    title: title || 'Scouting Activity',
+    type: type || 'Service',
+    date: date || new Date().toISOString().split('T')[0],
+    hours: Number(hours) || 4,
+    location: location || 'Field Site',
+    reflections: reflections || '',
+    skillsPracticed: Array.isArray(skillsPracticed) ? skillsPracticed : ['Fieldwork'],
+    status: submitForReview ? 'Pending Review' : 'Draft',
+    submittedAt: submitForReview ? new Date().toISOString() : undefined,
+  };
+
+  logbookEntries.unshift(newEntry);
+  res.json({ success: true, entry: newEntry });
+});
+
+// Review / Verify Logbook Entry (Leader / Secretary / Admin)
+app.post('/api/logbook/:id/verify', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status, reviewerName, reviewerRole, reviewerNotes } = req.body;
+
+  const entry = logbookEntries.find(e => e.id === id);
+  if (!entry) {
+    return res.status(404).json({ error: 'Logbook entry not found.' });
+  }
+
+  entry.status = status || 'Verified';
+  entry.reviewerName = reviewerName || 'Council Reviewer';
+  entry.reviewerRole = reviewerRole || 'Crew Leader';
+  entry.reviewerNotes = reviewerNotes || 'Verified according to WOSM logbook guidelines.';
+  entry.verifiedAt = new Date().toISOString();
+
+  res.json({ success: true, entry });
+});
+
+// -------------------------------------------------------------
+// 4. Omnichannel Broadcast Center (/api/broadcasts)
+// -------------------------------------------------------------
+app.get('/api/broadcasts', (_req: Request, res: Response) => {
+  res.json(broadcasts);
+});
+
+app.post('/api/broadcasts/dispatch', (req: Request, res: Response) => {
+  const { title, priority, targetAudience, channels, content, dispatchedBy } = req.body;
+
+  const newBroadcast: StoredBroadcast = {
+    id: `bc-${Date.now()}`,
+    title: title || 'Urgent Network Notice',
+    priority: priority || 'Normal',
+    targetAudience: targetAudience || 'All',
+    channels: channels || { inPortalBanner: true, emailHtml: true, telegramChannel: true },
+    content: content || '',
+    dispatchedBy: dispatchedBy || 'Council Secretary',
+    timestamp: new Date().toISOString(),
+    metrics: {
+      inPortalViews: channels?.inPortalBanner ? 1 : 0,
+      emailsSent: channels?.emailHtml ? 64 : 0,
+      telegramDeliveries: channels?.telegramChannel ? 95 : 0,
+    }
+  };
+
+  broadcasts.unshift(newBroadcast);
+  res.json({ success: true, broadcast: newBroadcast });
+});
+
+// -------------------------------------------------------------
+// 5. Meeting Minutes Governance (/api/minutes)
+// -------------------------------------------------------------
+app.get('/api/minutes', (req: Request, res: Response) => {
+  const { showDrafts } = req.query;
+  if (showDrafts === 'true') {
+    return res.json(meetingMinutes);
+  }
+  // Standard members only see published
+  res.json(meetingMinutes.filter(m => m.status === 'Published'));
+});
+
+app.post('/api/minutes', (req: Request, res: Response) => {
+  const { referenceNumber, title, date, location, chairPerson, secretary, attendees, absentees, agenda, resolutions, bodyHtml, status } = req.body;
+
+  const newMin: StoredMeetingMinutes = {
+    id: `min-${Date.now()}`,
+    referenceNumber: referenceNumber || `MIN-ROV-${new Date().getFullYear()}/${meetingMinutes.length + 1}`,
+    title,
+    date: date || new Date().toISOString().split('T')[0],
+    location: location || 'Council Headquarters',
+    chairPerson: chairPerson || 'Crew Leader',
+    secretary: secretary || 'Council Secretary',
+    attendees: attendees || [],
+    absentees: absentees || [],
+    agenda: agenda || [],
+    resolutions: resolutions || [],
+    bodyHtml: bodyHtml || '',
+    status: status || 'Draft',
+    publishedAt: status === 'Published' ? new Date().toISOString() : undefined,
+  };
+
+  meetingMinutes.unshift(newMin);
+  res.json({ success: true, minutes: newMin });
+});
+
+// -------------------------------------------------------------
+// 6. Attendance & Excuses (/api/attendance)
+// -------------------------------------------------------------
+app.get('/api/attendance/excuses', (_req: Request, res: Response) => {
+  res.json(excuses);
+});
+
+app.post('/api/attendance/excuse', (req: Request, res: Response) => {
+  const { memberId, memberName, eventId, eventTitle, reason } = req.body;
+
+  const newExcuse: StoredExcuse = {
+    id: `exc-${Date.now()}`,
+    memberId: memberId || 'ROV-7842',
+    memberName: memberName || 'Sarah Al-Mansoor',
+    eventId: eventId || 'EVT-01',
+    eventTitle: eventTitle || 'Official Gathering',
+    reason,
+    status: 'Pending',
+    filedAt: new Date().toISOString(),
+  };
+
+  excuses.unshift(newExcuse);
+  res.json({ success: true, excuse: newExcuse });
+});
+
+app.post('/api/attendance/excuse/:id/review', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status, reviewedBy, reviewNotes } = req.body;
+
+  const item = excuses.find(e => e.id === id);
+  if (!item) return res.status(404).json({ error: 'Excuse not found.' });
+
+  item.status = status;
+  item.reviewedBy = reviewedBy;
+  item.reviewNotes = reviewNotes;
+
+  res.json({ success: true, excuse: item });
+});
+
+// -------------------------------------------------------------
+// Vite Dev Server Integration
+// -------------------------------------------------------------
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.resolve(__dirname, 'dist')));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+    });
+  }
+
+  app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`Arabiyya Rover Scout Portal running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+startServer();

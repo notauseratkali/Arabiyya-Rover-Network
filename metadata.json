@@ -1,0 +1,6 @@
+{
+  "name": "RoverNet - Rover Scout Membership & Crew Portal",
+  "description": "Official membership management and crew network portal for Rover Scouts. Explore Rover crews, manage scout profiles, track service hours, badges, and expeditions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
