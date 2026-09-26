@@ -197,7 +197,7 @@ export const MinutesView: React.FC<MinutesViewProps> = ({ currentRole, currentUs
                   Council Quorum & Roll Call
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
-                  {selectedMinute.attendees.map((attendee, idx) => (
+                  {selectedMinute.attendees.map((attendee: string, idx: number) => (
                     <span key={idx} className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 font-medium">
                       {attendee}
                     </span>
@@ -211,7 +211,7 @@ export const MinutesView: React.FC<MinutesViewProps> = ({ currentRole, currentUs
                   Agenda Items Debated
                 </h3>
                 <ol className="list-decimal list-inside space-y-1 text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  {selectedMinute.agenda.map((item, idx) => (
+                  {selectedMinute.agenda.map((item: string, idx: number) => (
                     <li key={idx} className="leading-relaxed">{item}</li>
                   ))}
                 </ol>
@@ -223,7 +223,7 @@ export const MinutesView: React.FC<MinutesViewProps> = ({ currentRole, currentUs
                   Actionable Resolutions & Decrees
                 </h3>
                 <div className="space-y-2">
-                  {selectedMinute.resolutions.map(res => (
+                  {selectedMinute.resolutions.map((res: any) => (
                     <div key={res.id} className="p-3 rounded-xl bg-skyrover-50/50 border border-skyrover-200/80 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-navy-950">{res.topic}</span>

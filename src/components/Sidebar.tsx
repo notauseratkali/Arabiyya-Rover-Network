@@ -68,10 +68,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div>
               <span className="text-base font-bold tracking-tight text-slate-900">
-                Rover<span className="text-maroon-800">Net</span>
+                Arabiyya <span className="text-maroon-800">Rovers</span>
               </span>
               <span className="text-[10px] text-slate-500 block leading-none font-medium">
-                Scout Portal
+                Rover Scout Portal
               </span>
             </div>
           </div>

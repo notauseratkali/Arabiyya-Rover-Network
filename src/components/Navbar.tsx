@@ -44,7 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Compass className="w-5 h-5 text-skyrover-400" />
             </div>
             <span className="text-xl font-bold tracking-tight text-slate-900">
-              Rover<span className="text-maroon-800">Net</span>
+              Arabiyya <span className="text-maroon-800">Rovers</span>
             </span>
           </button>
         </div>

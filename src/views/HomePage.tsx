@@ -33,15 +33,15 @@ export const HomePage: React.FC<HomePageProps> = ({
               
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 border border-maroon-100 text-maroon-900 text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-maroon-700 animate-pulse" />
-                <span>Open Rover Scout Network &bull; Ages 18–26</span>
+                <span>Arabiyya Rover Network &bull; 1st Arabiyya Scout Group</span>
               </div>
 
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight leading-[1.15]" style={{ textWrap: 'balance' }}>
-                Service, Leadership, and Fellowship for Rover Crews
+                Arabiyya Rover Scout Portal &amp; Onboarding Pipeline
               </h1>
 
               <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-2xl">
-                The centralized membership portal and crew management platform for the Rover Scout Network. Track your service hours, manage crew credentials, and advance toward the Baden-Powell Award.
+                A structured, multi-tier onboarding pipeline built directly into the Arabiyya Rover Scout Portal. Automatically enforces age-appropriate scouting sections, progression timelines, real-time data validation, and council review.
               </p>
 
               {/* Action Buttons */}
@@ -50,7 +50,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   onClick={() => setActiveTab('signup')}
                   className="px-6 py-3 text-sm font-semibold text-white bg-maroon-900 hover:bg-maroon-800 rounded-xl shadow-md transition-all flex items-center gap-2 group"
                 >
-                  <span>Join a Rover Crew</span>
+                  <span>Start Member Application (Pages 1–8)</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                 </button>
 

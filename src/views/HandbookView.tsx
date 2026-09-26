@@ -80,9 +80,9 @@ export const HandbookView: React.FC = () => {
     const q = searchQuery.toLowerCase();
     return (
       art.title.toLowerCase().includes(q) ||
-      art.titleAr.includes(q) ||
-      art.content.toLowerCase().includes(q) ||
-      (art.subsections && art.subsections.some(s => s.toLowerCase().includes(q)))
+      (art.titleAr && art.titleAr.includes(q)) ||
+      (art.content && art.content.toLowerCase().includes(q)) ||
+      (art.subsections && art.subsections.some((s: string) => s.toLowerCase().includes(q)))
     );
   });
 
@@ -173,7 +173,7 @@ export const HandbookView: React.FC = () => {
                   Clauses & Operational Mandates
                 </div>
                 <ul className="space-y-1.5 text-xs text-slate-600 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                  {art.subsections.map((sub, sIdx) => (
+                  {art.subsections.map((sub: string, sIdx: number) => (
                     <li key={sIdx} className="flex items-start gap-2 leading-relaxed">
                       <span className="w-1.5 h-1.5 rounded-full bg-skyrover-500 shrink-0 mt-1.5" />
                       <span>{sub}</span>

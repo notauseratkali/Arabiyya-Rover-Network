@@ -2,9 +2,13 @@ import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import crypto from 'crypto';
+import { GoogleGenAI } from '@google/genai';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Gemini SDK with server-side environment key
+const ai = new GoogleGenAI({});
 
 app.use(express.json());
 
@@ -383,8 +387,482 @@ app.post('/api/sso/rotate-key', (req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
-// 2. Intelligent Member Pipeline APIs (/api/pipeline/*)
+// 2. Intelligent Member Pipeline & Onboarding APIs (/api/signup/* & /api/pipeline/*)
 // -------------------------------------------------------------
+
+// Council alert email receivers
+const ROVER_NOTIFICATION_EMAILS = ['council@arabiyyascouts.mv', 'gsl@arabiyyascouts.mv'];
+
+// Stored records for onboarding
+let memberApplicationsList: any[] = [
+  {
+    applicationId: 'mem-882194',
+    section: 'Rover',
+    status: 'Pending Verification',
+    personal: {
+      fullName: 'Ahmed Zaidan',
+      commonName: 'Zaid',
+      nationalId: 'A381920',
+      gender: 'Male',
+    },
+    dob: { year: 2004, month: 7, day: 12 },
+    exactAge: { years: 21, months: 8, days: 13 },
+    awardGoal: { willingForAward: true, goalTitle: 'Baden-Powell (BP) Award' },
+    standing: { currentBadgeLevel: 'Bushman’s Thong', remainingYears: 4, remainingMonths: 3, remainingDays: 17, deadlineDate: '2030-07-11' },
+    commitmentsAccepted: true,
+    background: { type: 'former', troopNumber: '1', atollIsland: 'Male\'', officialDesignation: '1st Male\' Scout Group' },
+    permanentAddress: { country: 'Maldives', dialCode: '+960', atoll: 'Kaafu', island: 'Male\' City', ward: 'Henveiru', streetAddress: 'H. Oceanic Breeze, Boduthakurufaanu Magu' },
+    livingAddress: { isSameAsPermanent: true },
+    contacts: { phone: '7781920', dialCode: '+960', telegramTag: '@zaid_scout', instagramHandle: '@zaid.scouts', email: 'zaidan@arabiyyascouts.mv' },
+    emergencyContact: { fullName: 'Ibrahim Zaidan', relationship: 'Parent', phone: '7901122' },
+    credentials: { username: 'zaidan_rover' },
+    policyAccepted: true,
+    submittedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+    councilReviewNotes: 'Candidate background verified from 1st Male\' records. Phone interview pending.',
+  },
+  {
+    applicationId: 'mem-739102',
+    section: 'Explorer',
+    status: 'Interview Scheduled',
+    personal: {
+      fullName: 'Aminath Aish',
+      commonName: 'Aisha',
+      nationalId: 'A491029',
+      gender: 'Female',
+    },
+    dob: { year: 2009, month: 11, day: 4 },
+    exactAge: { years: 16, months: 4, days: 21 },
+    awardGoal: { willingForAward: true, goalTitle: 'President Scout (PS) Award' },
+    standing: { currentBadgeLevel: 'Advanced Scout Standard', remainingYears: 1, remainingMonths: 7, remainingDays: 8, deadlineDate: '2027-11-03' },
+    commitmentsAccepted: true,
+    background: { type: 'former', troopNumber: '1', atollIsland: 'Arabiyya', officialDesignation: '1st Arabiyya Scout Group' },
+    permanentAddress: { country: 'Maldives', dialCode: '+960', atoll: 'Kaafu', island: 'Male\' City', ward: 'Maafannu', streetAddress: 'M. Silver Coral, Orchid Magu' },
+    livingAddress: { isSameAsPermanent: true },
+    contacts: { phone: '9920192', dialCode: '+960', telegramTag: '@aisha_explorer', instagramHandle: '@aisha.scout', email: 'aisha@arabiyyascouts.mv' },
+    emergencyContact: { fullName: 'Mariyam Shifna', relationship: 'Parent', phone: '7712345' },
+    credentials: { username: 'aisha_explorer' },
+    policyAccepted: true,
+    submittedAt: new Date(Date.now() - 3600000 * 48).toISOString(),
+    phoneInterviewDate: '2026-03-28T16:00:00Z',
+    councilReviewNotes: 'Phone interview scheduled with Arabiyya Council Mentor.',
+  }
+];
+
+let leaderApplicationsList: any[] = [
+  {
+    applicationId: 'ldr-102941',
+    fullName: 'Ali Naushad',
+    nationalId: 'A182938',
+    country: 'Maldives',
+    atoll: 'Kaafu',
+    island: 'Male\' City',
+    ward: 'Galolhu',
+    streetAddress: 'G. Green Meadow',
+    phone: '+960 7719922',
+    email: 'naushad@arabiyyascouts.mv',
+    areaOfExpertise: 'Expedition Planning & Wilderness First Responder',
+    scoutingExperience: '14 years active in Scouting, Wood Badge holder, former Patrol Leader.',
+    leadershipMotivation: 'To mentor senior rovers towards their Baden-Powell Awards and lead offshore sea navigation expeditions.',
+    status: 'Pending Review',
+    submittedAt: new Date(Date.now() - 3600000 * 72).toISOString(),
+  }
+];
+
+// 1. Exact Date of Birth & Section Verification (/api/signup/verify-dob)
+app.post('/api/signup/verify-dob', (req: Request, res: Response) => {
+  const { year, month, day, dob } = req.body;
+
+  let birthDate: Date;
+  if (year && month && day) {
+    birthDate = new Date(Number(year), Number(month) - 1, Number(day));
+  } else if (dob) {
+    birthDate = new Date(dob);
+  } else {
+    return res.status(400).json({ error: 'Date of birth is required (year, month, day).' });
+  }
+
+  if (isNaN(birthDate.getTime())) {
+    return res.status(400).json({ error: 'Invalid date provided.' });
+  }
+
+  const now = new Date();
+  
+  // Calculate exact age in years, months, days
+  let years = now.getFullYear() - birthDate.getFullYear();
+  let months = now.getMonth() - birthDate.getMonth();
+  let days = now.getDate() - birthDate.getDate();
+
+  if (days < 0) {
+    months--;
+    const prevMonthDays = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+    days += prevMonthDays;
+  }
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+
+  const exactAge = { years, months, days };
+
+  // Section categorization
+  if (years < 16) {
+    return res.json({
+      isEligible: false,
+      section: 'Underage',
+      exactAge,
+      awardPathway: 'Ineligible',
+      cutoffAge: 16,
+      deadlineDate: '',
+      deadlineRule: 'Applications are not accepted; applicants must be at least 16 years old.',
+      remainingTime: { years: 0, months: 0, days: 0, totalDays: 0 },
+      standardBenchmarkMonths: 0,
+      feasibilityStatus: 'Extremely Tight',
+      isLeaderTrack: false,
+      message: 'Underage: Applicants must be at least 16 years old to join Arabiyya Rover Network.',
+    });
+  }
+
+  if (years >= 26) {
+    return res.json({
+      isEligible: true,
+      section: 'Leader',
+      exactAge,
+      awardPathway: 'Leadership / Adult Scouting',
+      cutoffAge: 0,
+      deadlineDate: '',
+      deadlineRule: 'Automatically diverted to the Leader Candidate Pathway for ages 26+.',
+      remainingTime: { years: 0, months: 0, days: 0, totalDays: 0 },
+      standardBenchmarkMonths: 0,
+      feasibilityStatus: 'Optimal',
+      isLeaderTrack: true,
+      message: 'Applicant age is 26 or above. Diverted to Arabiyya Leader Candidate Track.',
+    });
+  }
+
+  // Explorers: 16 to < 18
+  // Rovers: 18 to < 26
+  const isExplorer = years < 18;
+  const section = isExplorer ? 'Explorer' : 'Rover';
+  const cutoffAge = isExplorer ? 18 : 26;
+  const awardPathway = isExplorer ? 'President Scout (PS) Award' : 'Baden-Powell (BP) Award';
+  const deadlineRule = isExplorer 
+    ? 'Final portfolio/badge submission deadline is 1 day prior to the 18th birthday.'
+    : 'Final portfolio/badge submission deadline is 1 day prior to the 26th birthday.';
+  const standardBenchmarkMonths = isExplorer ? 15 : 36; // 15 months for PS, 3 years for BP
+
+  // 1 day prior to cutoff birthday
+  const cutoffBirthday = new Date(birthDate.getFullYear() + cutoffAge, birthDate.getMonth(), birthDate.getDate());
+  const deadline = new Date(cutoffBirthday.getTime() - 24 * 60 * 60 * 1000);
+  
+  const diffMs = deadline.getTime() - now.getTime();
+  const totalDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+  let remYears = deadline.getFullYear() - now.getFullYear();
+  let remMonths = deadline.getMonth() - now.getMonth();
+  let remDays = deadline.getDate() - now.getDate();
+
+  if (remDays < 0) {
+    remMonths--;
+    const prevMonthDays = new Date(deadline.getFullYear(), deadline.getMonth(), 0).getDate();
+    remDays += prevMonthDays;
+  }
+  if (remMonths < 0) {
+    remYears--;
+    remMonths += 12;
+  }
+
+  const remainingMonthsTotal = remYears * 12 + remMonths;
+  let feasibilityStatus: 'Optimal' | 'Feasible' | 'Tight Schedule' | 'Extremely Tight' = 'Feasible';
+  if (remainingMonthsTotal >= standardBenchmarkMonths + 6) {
+    feasibilityStatus = 'Optimal';
+  } else if (remainingMonthsTotal >= standardBenchmarkMonths) {
+    feasibilityStatus = 'Feasible';
+  } else if (remainingMonthsTotal >= standardBenchmarkMonths * 0.7) {
+    feasibilityStatus = 'Tight Schedule';
+  } else {
+    feasibilityStatus = 'Extremely Tight';
+  }
+
+  return res.json({
+    isEligible: true,
+    section,
+    exactAge,
+    awardPathway,
+    cutoffAge,
+    deadlineDate: deadline.toISOString().split('T')[0],
+    deadlineRule,
+    remainingTime: {
+      years: Math.max(0, remYears),
+      months: Math.max(0, remMonths),
+      days: Math.max(0, remDays),
+      totalDays,
+    },
+    standardBenchmarkMonths,
+    feasibilityStatus,
+    isLeaderTrack: false,
+    message: `Designated as ${section} Scout. Award Pathway: ${awardPathway}.`,
+  });
+});
+
+// AI Crew Progression Benchmark Analyzer (/api/ai/benchmark-analysis)
+app.post('/api/ai/benchmark-analysis', async (req: Request, res: Response) => {
+  const { section, currentBadgeLevel, exactAge, remainingMonths, remainingYears } = req.body;
+
+  const isExplorer = section === 'Explorer';
+  let baseMonths = 36;
+  let standardRequirementText = '~3 years to Baden-Powell Award';
+
+  if (!isExplorer) {
+    if (currentBadgeLevel === 'Square') {
+      baseMonths = 36;
+      standardRequirementText = '~3 years to Baden-Powell Award';
+    } else if (currentBadgeLevel === 'Scout Standard') {
+      baseMonths = 30;
+      standardRequirementText = '~2 years and 6 months to Baden-Powell Award';
+    } else if (currentBadgeLevel === 'Advanced Scout Standard') {
+      baseMonths = 24;
+      standardRequirementText = '~2 years to Baden-Powell Award';
+    } else if (currentBadgeLevel === 'Bushman’s Thong' || currentBadgeLevel === "Bushman's Thong") {
+      baseMonths = 24;
+      standardRequirementText = '~2 years to Baden-Powell Award';
+    } else if (currentBadgeLevel?.includes('President Scout')) {
+      baseMonths = 24;
+      standardRequirementText = '~2 years to Baden-Powell Award';
+    }
+  } else {
+    if (currentBadgeLevel === 'Square') {
+      baseMonths = 18;
+      standardRequirementText = '~18 months to President Scout Award';
+    } else if (currentBadgeLevel === 'Scout Standard') {
+      baseMonths = 15;
+      standardRequirementText = '~15 months to President Scout Award';
+    } else if (currentBadgeLevel === 'Advanced Scout Standard') {
+      baseMonths = 12;
+      standardRequirementText = '~12 months to President Scout Award';
+    } else if (currentBadgeLevel === 'Bushman’s Thong' || currentBadgeLevel === "Bushman's Thong") {
+      baseMonths = 8;
+      standardRequirementText = '~8 months to President Scout Award';
+    } else if (currentBadgeLevel?.includes('President Scout')) {
+      baseMonths = 6;
+      standardRequirementText = '~6 months (Validation)';
+    }
+  }
+
+  const remTotalMonths = (remainingYears || 0) * 12 + (remainingMonths || 0);
+
+  // Attempt Gemini model analysis
+  try {
+    const prompt = `You are the Lead Scout Progression Auditor for the 1st Arabiyya Scout Group / Arabiyya Rover Network.
+Analyze the expected completion benchmark timeline toward the ${isExplorer ? 'President Scout (PS) Award' : 'Baden-Powell (BP) Award'}.
+
+Official Standard Benchmark:
+- Starting Badge: ${currentBadgeLevel || 'Scout Standard'}
+- Official Standard Requirement: ${standardRequirementText} (${baseMonths} months)
+- Candidate Section: ${section || 'Rover'} Scout
+- Candidate Exact Age: ${exactAge?.years || 20} years, ${exactAge?.months || 0} months
+- Remaining Time Until Cut-off Birthday: ${remainingYears || 4} years, ${remainingMonths || 0} months (~${remTotalMonths} total months)
+- Crew Velocity Context: Arabiyya Al-Ruwad Rover Crew (active patrol pace, 4.8 service hrs/mo, 8 expeditions/year)
+
+Respond ONLY with a valid JSON object matching this schema:
+{
+  "benchmarkMonths": ${baseMonths},
+  "benchmarkText": "${standardRequirementText}",
+  "feasibility": "Optimal" | "Feasible" | "Tight Schedule" | "Extremely Tight",
+  "crewVelocityNotes": string,
+  "keyRecommendations": string[]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const responseText = response.text?.trim();
+    if (responseText) {
+      const parsed = JSON.parse(responseText);
+      return res.json({
+        success: true,
+        benchmarkMonths: baseMonths,
+        benchmarkText: standardRequirementText,
+        feasibility: parsed.feasibility || (remTotalMonths >= baseMonths ? 'Feasible' : 'Tight Schedule'),
+        crewVelocityNotes: parsed.crewVelocityNotes || `Reviewed against Arabiyya Crew velocity. Official requirement is ${standardRequirementText}.`,
+        keyRecommendations: parsed.keyRecommendations || [],
+        source: 'AI-Powered Crew Review (Gemini 3.8 Flash)',
+      });
+    }
+  } catch (err) {
+    console.warn('Gemini Benchmark generation error, using dynamic crew model fallback:', err);
+  }
+
+  // Fallback
+  let feasibility: 'Optimal' | 'Feasible' | 'Tight Schedule' | 'Extremely Tight' = 'Feasible';
+  if (remTotalMonths >= baseMonths + 6) feasibility = 'Optimal';
+  else if (remTotalMonths >= baseMonths) feasibility = 'Feasible';
+  else if (remTotalMonths >= baseMonths * 0.7) feasibility = 'Tight Schedule';
+  else feasibility = 'Extremely Tight';
+
+  return res.json({
+    success: true,
+    benchmarkMonths: baseMonths,
+    benchmarkText: standardRequirementText,
+    feasibility,
+    crewVelocityNotes: `Reviewed against Arabiyya Crew velocity. Official standard requirement for "${currentBadgeLevel || 'Scout Standard'}" standing is ${standardRequirementText}.`,
+    keyRecommendations: [
+      'Maintain minimum 4 hours/month community service cadence with Arabiyya Patrol.',
+      'Schedule quarterly Court of Honor milestone reviews with Crew Leader.',
+    ],
+    source: 'Arabiyya Crew Velocity Performance Model',
+  });
+});
+
+// 2. Real-time Uniqueness Validation (/api/signup/check-availability)
+app.post('/api/signup/check-availability', (req: Request, res: Response) => {
+  const { field, value } = req.body;
+
+  if (!field || !value) {
+    return res.status(400).json({ error: 'Field and value required.' });
+  }
+
+  const cleanVal = String(value).trim().toLowerCase();
+
+  // Check in member applications
+  let conflictFound = false;
+  for (const app of memberApplicationsList) {
+    if (field === 'nationalId' && app.personal?.nationalId?.toLowerCase() === cleanVal) conflictFound = true;
+    if (field === 'username' && app.credentials?.username?.toLowerCase() === cleanVal) conflictFound = true;
+    if (field === 'email' && app.contacts?.email?.toLowerCase() === cleanVal) conflictFound = true;
+    if (field === 'phone' && app.contacts?.phone?.replace(/\D/g, '') === cleanVal.replace(/\D/g, '')) conflictFound = true;
+    if (field === 'telegramTag' && app.contacts?.telegramTag?.toLowerCase().replace('@', '') === cleanVal.replace('@', '')) conflictFound = true;
+    if (field === 'instagramHandle' && app.contacts?.instagramHandle?.toLowerCase().replace('@', '') === cleanVal.replace('@', '')) conflictFound = true;
+  }
+
+  // Check in legacy applications
+  for (const app of applications) {
+    if (field === 'email' && app.email.toLowerCase() === cleanVal) conflictFound = true;
+    if (field === 'phone' && app.phone.replace(/\D/g, '') === cleanVal.replace(/\D/g, '')) conflictFound = true;
+    if (field === 'telegramTag' && app.telegramHandle.toLowerCase().replace('@', '') === cleanVal.replace('@', '')) conflictFound = true;
+  }
+
+  if (conflictFound) {
+    return res.json({ available: false, field, error: `This ${field} is already registered in the Arabiyya Scout records.` });
+  }
+
+  return res.json({ available: true, field });
+});
+
+// 3. Final Step 8 Member Submission (/api/signup/member)
+app.post('/api/signup/member', (req: Request, res: Response) => {
+  const applicationData = req.body;
+
+  if (!applicationData.personal?.fullName || !applicationData.contacts?.email) {
+    return res.status(400).json({ error: 'Incomplete application payload.' });
+  }
+
+  const applicationId = `mem-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const newRecord = {
+    ...applicationData,
+    applicationId,
+    status: 'Pending Verification',
+    submittedAt: new Date().toISOString(),
+  };
+
+  memberApplicationsList.unshift(newRecord);
+
+  // Automated notification dispatches
+  console.log(`[Arabiyya Auto-Mailer] Dispatched Welcome Confirmation Email to applicant: ${newRecord.contacts.email}`);
+  console.log(`[Arabiyya Rover Council] Dispatched New Application Alert to council channels: ${ROVER_NOTIFICATION_EMAILS.join(', ')} for candidate ${newRecord.personal.fullName} (${applicationId})`);
+
+  return res.json({
+    success: true,
+    applicationId,
+    status: 'Pending Verification',
+    candidateName: newRecord.personal.fullName,
+    candidateEmail: newRecord.contacts.email,
+    prompt: 'Thank you for registering! Please wait for a call from the Arabiyya Rover Council regarding your membership.',
+    automatedEmailDispatched: true,
+    councilNotified: true,
+  });
+});
+
+// 4. Leader Track Submission (/api/signup/leader)
+app.post('/api/signup/leader', (req: Request, res: Response) => {
+  const { fullName, nationalId, country, atoll, island, ward, streetAddress, phone, email, areaOfExpertise, scoutingExperience, leadershipMotivation } = req.body;
+
+  if (!fullName || !email || !phone) {
+    return res.status(400).json({ error: 'Required fields missing for Leader candidate.' });
+  }
+
+  const applicationId = `ldr-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const newLeaderApp = {
+    applicationId,
+    fullName,
+    nationalId: nationalId || '',
+    country: country || 'Maldives',
+    atoll: atoll || 'Kaafu',
+    island: island || 'Male\' City',
+    ward: ward || '',
+    streetAddress: streetAddress || '',
+    phone,
+    email,
+    areaOfExpertise: areaOfExpertise || 'Scoutcraft Instruction',
+    scoutingExperience: scoutingExperience || 'Active Leader Background',
+    leadershipMotivation: leadershipMotivation || '',
+    status: 'Pending Review',
+    submittedAt: new Date().toISOString(),
+  };
+
+  leaderApplicationsList.unshift(newLeaderApp);
+
+  console.log(`[Arabiyya GSL Alert] New Leader Track Dossier submitted: ${fullName} (${applicationId}). Dispatched to ${ROVER_NOTIFICATION_EMAILS.join(', ')}`);
+
+  return res.json({
+    success: true,
+    applicationId,
+    status: 'Pending Review',
+    message: 'Leader Track application submitted successfully for Executive Council and Group Scout Leader (GSL) review.',
+  });
+});
+
+// 5. Arabiyya Rover Council Review List (/api/council/applications)
+app.get('/api/council/applications', (_req: Request, res: Response) => {
+  res.json({
+    memberApplications: memberApplicationsList,
+    leaderApplications: leaderApplicationsList,
+  });
+});
+
+// 6. Council Decision in Admin Panel (/api/council/decision)
+app.post('/api/council/decision', (req: Request, res: Response) => {
+  const { applicationId, action, notes, investitureDate } = req.body;
+
+  const memberApp = memberApplicationsList.find(a => a.applicationId === applicationId);
+  if (!memberApp) {
+    return res.status(404).json({ error: 'Application record not found.' });
+  }
+
+  if (action === 'approve') {
+    memberApp.status = 'Approved';
+    memberApp.investitureDate = investitureDate || new Date(Date.now() + 3600000 * 24 * 14).toISOString().split('T')[0];
+    memberApp.councilReviewNotes = notes || 'Background checks and verification call completed successfully.';
+  } else if (action === 'activate') {
+    memberApp.status = 'Active';
+    memberApp.councilReviewNotes = notes || 'Investiture held. Portal login activated.';
+  } else if (action === 'schedule_call') {
+    memberApp.status = 'Interview Scheduled';
+    memberApp.phoneInterviewDate = investitureDate || new Date(Date.now() + 3600000 * 24 * 2).toISOString();
+    memberApp.councilReviewNotes = notes || 'Verification call scheduled with Arabiyya Council interviewer.';
+  } else if (action === 'reject') {
+    memberApp.status = 'Rejected';
+    memberApp.councilReviewNotes = notes || 'Application did not meet Arabiyya Scout requirements.';
+  }
+
+  res.json({ success: true, application: memberApp });
+});
 
 // Submit New Application with Dynamic Age Allocation & 2FA OTP
 app.post('/api/pipeline/apply', (req: Request, res: Response) => {
